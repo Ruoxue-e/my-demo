@@ -10,21 +10,21 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            -webkit-tap-highlight-color: transparent; /* 去除移动端点击高亮 */
+            -webkit-tap-highlight-color: transparent;
         }
         html, body {
             overflow: hidden;
             height: 100%;
             width: 100%;
-            touch-action: manipulation; /* 优化移动端触摸行为 */
+            touch-action: manipulation;
+            position: fixed; /* 固定视口，避免滚动影响 */
         }
         body {
             background: #000;
             display: flex;
             justify-content: center;
             align-items: center;
-            position: relative;
-            -webkit-user-select: none; /* 禁止移动端文本选择 */
+            -webkit-user-select: none;
             user-select: none;
         }
         body::before {
@@ -46,18 +46,19 @@
             z-index: -1;
             opacity: 0.8;
             animation: twinkle 8s linear infinite;
+            transform: translateZ(0); /* 启用GPU加速 */
         }
-
-        /* 新增星星闪烁动画 */
         @keyframes twinkle {
             0%, 100% { opacity: 0.8; }
             50% { opacity: 0.4; }
         }
         canvas {
             display: block;
-            width: 100vw; /* 使用视口单位 */
-            height: 100vh; /* 使用视口单位 */
-            object-fit: contain; /* 保持比例 */
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover; /* 覆盖视口，避免留白 */
+            image-rendering: -webkit-optimize-contrast; /* 优化渲染质量 */
+            image-rendering: pixelated; /* 避免模糊插值 */
         }
         .text-overlay {
             position: absolute;
@@ -65,13 +66,15 @@
             left: 50%;
             transform: translate(-50%, -50%);
             font-family: "Ma Shan Zheng", "华文行楷", "STKaiti", "KaiTi", Arial, sans-serif;
-            font-size: clamp(24px, 8vw, 60px); /* 响应式字体大小 */
+            font-size: clamp(24px, 8vw, 60px);
             font-weight: bold;
             color: white;
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
             pointer-events: none;
-            text-align: center; /* 文本居中 */
-            padding: 0 20px; /* 左右内边距防止文字溢出 */
+            text-align: center;
+            padding: 0 20px;
+            -webkit-font-smoothing: antialiased; /* 文字抗锯齿 */
+            backface-visibility: hidden; /* 避免文字模糊 */
         }
         .init-hint {
             position: absolute;
@@ -80,34 +83,29 @@
             transform: translateX(-50%);
             color: rgba(255, 255, 255, 0.7);
             font-family: "Ma Shan Zheng", "华文行楷", "STKaiti", "KaiTi", Arial, sans-serif;
-            font-size: clamp(14px, 3vw, 18px); /* 响应式提示文字 */
+            font-size: clamp(14px, 3vw, 18px);
             cursor: pointer;
             text-align: center;
-            padding: 10px 20px; /* 增大点击区域 */
+            padding: 10px 20px;
+            -webkit-font-smoothing: antialiased;
         }
-
-        /* 适配横屏/竖屏 */
         @media screen and (orientation: landscape) and (max-height: 500px) {
             .text-overlay {
-                font-size: clamp(20px, 7vh, 40px); /* 横屏时按高度调整 */
+                font-size: clamp(20px, 7vh, 40px);
             }
             .init-hint {
                 bottom: 10px;
                 font-size: clamp(12px, 2vh, 16px);
             }
         }
-
-        /* 适配小屏手机 */
         @media screen and (max-width: 375px) and (max-height: 667px) {
             body::before {
-                background-size: 150px 150px; /* 缩小星星背景 */
+                background-size: 150px 150px;
             }
         }
-
-        /* 适配大屏手机/平板 */
         @media screen and (min-width: 768px) and (min-height: 1024px) {
             body::before {
-                background-size: 250px 250px; /* 放大星星背景 */
+                background-size: 250px 250px;
             }
         }
     </style>
@@ -118,71 +116,73 @@
     <div class="init-hint" id="initHint">点击屏幕开始播放</div>
 
     <script>
-        // 获取Canvas和上下文
         const canvas = document.getElementById('fireworkCanvas');
         const ctx = canvas.getContext('2d');
         const initHint = document.getElementById('initHint');
         
-        // 设置Canvas尺寸为窗口大小（优化版）
+        // 关键优化：高清Canvas渲染核心函数
         function resizeCanvas() {
-            // 获取设备像素比，解决高清屏模糊问题
             const dpr = window.devicePixelRatio || 1;
-            // 获取实际显示尺寸
-            const rect = canvas.getBoundingClientRect();
+            const rect = document.body.getBoundingClientRect(); // 基于body获取准确尺寸
             
-            // 设置canvas实际像素尺寸（乘以dpr）
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
+            // 强制Canvas像素尺寸 = 显示尺寸 * DPR（彻底解决模糊）
+            canvas.width = Math.floor(rect.width * dpr);
+            canvas.height = Math.floor(rect.height * dpr);
             
-            // 缩放上下文以匹配dpr
-            ctx.scale(dpr, dpr);
+            // 重置上下文状态，避免缩放累积
+            ctx.resetTransform();
+            ctx.scale(dpr, dpr); // 缩放上下文，绘制逻辑不变但像素更密集
             
-            // 设置canvas样式尺寸
+            // 固定样式尺寸，确保覆盖视口
             canvas.style.width = `${rect.width}px`;
             canvas.style.height = `${rect.height}px`;
+            
+            // 优化Canvas渲染质量
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high'; // 高清平滑质量
         }
 
-        // 初始调整
+        // 初始调整+强化事件监听
         resizeCanvas();
         
-        // 使用防抖优化resize性能
+        // 防抖优化，减少重绘次数
         let resizeTimeout;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(resizeCanvas, 100);
+            resizeTimeout = setTimeout(resizeCanvas, 50); // 缩短延迟，响应更快
         });
-
-        // 监听屏幕旋转
+        
         window.addEventListener('orientationchange', () => {
-            setTimeout(resizeCanvas, 200); // 旋转后延迟调整
+            // 旋转后强制刷新，避免尺寸残留
+            setTimeout(() => {
+                resizeCanvas();
+            }, 100);
         });
 
-        // 定义颜色
+        // 页面加载完成后再调整一次，确保尺寸准确
+        window.addEventListener('load', resizeCanvas);
+
         const COLORS = [
-            [255, 0, 0],     // 红
-            [255, 165, 0],   // 橙
-            [255, 255, 0],   // 黄
-            [0, 255, 0],     // 绿
-            [0, 0, 255],     // 蓝
-            [128, 0, 128],   // 紫
-            [255, 192, 203]  // 粉
+            [255, 0, 0],
+            [255, 165, 0],
+            [255, 255, 0],
+            [0, 255, 0],
+            [0, 0, 255],
+            [128, 0, 128],
+            [255, 192, 203]
         ];
 
-        // 音频相关变量
         let audioContext;
         let isAudioInited = false;
         let launchBuffers = [];
         let explodeBuffers = [];
 
-        // 初始化音频上下文和音效样本
         function initAudio() {
             if (!isAudioInited) {
                 try {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     isAudioInited = true;
                     initHint.style.display = 'none';
-                    
-                    // 预生成更逼真的音效样本
                     generateRealisticSounds();
                 } catch (e) {
                     console.error('音频初始化失败:', e);
@@ -191,101 +191,70 @@
             }
         }
 
-        // 生成更逼真的烟花音效
         function generateRealisticSounds() {
-            // 生成发射音效样本（模拟烟花升空的嘶嘶声）
             for (let i = 0; i < 3; i++) {
                 const bufferSize = audioContext.sampleRate * 1.5;
                 const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
                 const data = buffer.getChannelData(0);
-                
-                // 生成白噪声 + 音调变化，模拟烟花升空
                 for (let j = 0; j < bufferSize; j++) {
                     const time = j / audioContext.sampleRate;
-                    // 基础噪声
                     const noise = (Math.random() * 2 - 1) * 0.1;
-                    // 上升音调
                     const tone = Math.sin(time * 400 * Math.exp(-time * 2)) * 0.2;
-                    // 音量衰减
                     const volume = Math.exp(-time * 3);
-                    
                     data[j] = (noise + tone) * volume;
                 }
                 launchBuffers.push(buffer);
             }
 
-            // 生成爆炸音效样本（模拟烟花爆炸的爆裂声）
             for (let i = 0; i < 5; i++) {
                 const bufferSize = audioContext.sampleRate * 0.8;
                 const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
                 const data = buffer.getChannelData(0);
-                
-                // 生成爆裂声 + 混响效果
                 for (let j = 0; j < bufferSize; j++) {
                     const time = j / audioContext.sampleRate;
-                    // 随机爆裂声
                     const crackle = (Math.random() * 2 - 1) * Math.exp(-time * 10);
-                    // 低频轰鸣
                     const boom = Math.sin(time * 100) * Math.exp(-time * 5) * 0.3;
-                    // 高频碎片
                     const spark = Math.sin(time * 2000) * Math.exp(-time * 20) * 0.1;
-                    
                     data[j] = (crackle + boom + spark) * 0.5;
                 }
                 explodeBuffers.push(buffer);
             }
         }
 
-        // 播放更逼真的发射音效
         function playLaunchSound() {
             if (!isAudioInited || launchBuffers.length === 0) return;
-            
             try {
                 const source = audioContext.createBufferSource();
                 const gainNode = audioContext.createGain();
-                
-                // 随机选择一个发射音效样本
                 source.buffer = launchBuffers[Math.floor(Math.random() * launchBuffers.length)];
-                
-                // 动态音量控制，模拟距离感
                 gainNode.gain.setValueAtTime(0.1 + Math.random() * 0.1, audioContext.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.5);
-                
                 source.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-                
                 source.start();
             } catch (e) {
                 console.error('发射音效播放失败:', e);
             }
         }
 
-        // 播放更逼真的爆炸音效
         function playExplodeSound() {
             if (!isAudioInited || explodeBuffers.length === 0) return;
-            
             try {
                 const source = audioContext.createBufferSource();
                 const gainNode = audioContext.createGain();
-                
-                // 随机选择一个爆炸音效样本
                 source.buffer = explodeBuffers[Math.floor(Math.random() * explodeBuffers.length)];
-                
-                // 随机音量，模拟不同距离的爆炸声
                 const volume = 0.2 + Math.random() * 0.2;
                 gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.8);
-                
                 source.connect(gainNode);
                 gainNode.connect(audioContext.destination);
-                
                 source.start();
             } catch (e) {
                 console.error('爆炸音效播放失败:', e);
             }
         }
 
-        // 烟花粒子类
+        // 优化粒子绘制，提升清晰度
         class FireworkParticle {
             constructor(x, y, color) {
                 this.x = x;
@@ -298,6 +267,7 @@
                 this.color = color;
                 this.life = 100;
                 this.decay = Math.random() * 0.08 + 0.9;
+                this.alpha = 1; // 新增透明度控制，避免模糊过渡
             }
 
             update() {
@@ -307,25 +277,26 @@
                 this.vx *= 0.98;
                 this.vy *= 0.98;
                 this.life *= this.decay;
+                this.alpha = this.life / 100; // 透明度与生命值同步
             }
 
             draw() {
-                const size = Math.max(1, Math.floor(this.life / 10));
+                const size = Math.max(1.5, Math.floor(this.life / 8)); // 增大粒子尺寸，更清晰
                 ctx.beginPath();
-                ctx.arc(Math.floor(this.x), Math.floor(this.y), size, 0, Math.PI * 2);
-                ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
+                ctx.arc(Math.round(this.x), Math.round(this.y), size, 0, Math.PI * 2); // 坐标取整，避免模糊
+                ctx.fillStyle = `rgba(${this.color[0]}, ${this.color[1]}, ${this.color[2]}, ${this.alpha})`;
                 ctx.fill();
+                ctx.closePath(); // 闭合路径，提升渲染效率
             }
         }
 
-        // 烟花发射器类
         class Firework {
             constructor() {
-                // 适配不同屏幕宽度，确保烟花在可视区域内
-                this.x = Math.floor(Math.random() * (canvas.width / window.devicePixelRatio - 80)) + 40;
-                this.y = canvas.height / window.devicePixelRatio;
-                // 适配不同屏幕高度的目标位置
-                this.targetY = Math.floor(Math.random() * (canvas.height / window.devicePixelRatio * 0.3)) + 50;
+                const screenWidth = canvas.width / window.devicePixelRatio;
+                const screenHeight = canvas.height / window.devicePixelRatio;
+                this.x = Math.floor(Math.random() * (screenWidth - 100)) + 50; // 扩大生成范围，避免边缘
+                this.y = screenHeight;
+                this.targetY = Math.floor(Math.random() * (screenHeight * 0.3)) + 80; // 提高目标位置，更显眼
                 this.speed = Math.floor(Math.random() * 3) + 7;
                 this.color = COLORS[Math.floor(Math.random() * COLORS.length)];
                 this.exploded = false;
@@ -337,13 +308,10 @@
             update() {
                 if (!this.exploded) {
                     this.y -= this.speed;
-                    
-                    // 播放发射音效
                     if (!this.hasPlayedLaunchSound) {
                         playLaunchSound();
                         this.hasPlayedLaunchSound = true;
                     }
-
                     if (this.y <= this.targetY) {
                         this.explode();
                     }
@@ -360,13 +328,11 @@
 
             explode() {
                 this.exploded = true;
-                // 播放爆炸音效
                 if (!this.hasPlayedExplodeSound) {
                     playExplodeSound();
                     this.hasPlayedExplodeSound = true;
                 }
-                // 生成粒子数量保持不变，保证爆炸效果
-                const numParticles = Math.floor(Math.random() * 150) + 150;
+                const numParticles = Math.floor(Math.random() * 180) + 180; // 增加粒子数量，更饱满清晰
                 for (let i = 0; i < numParticles; i++) {
                     this.particles.push(new FireworkParticle(this.x, this.y, this.color));
                 }
@@ -375,48 +341,42 @@
             draw() {
                 if (!this.exploded) {
                     ctx.beginPath();
-                    ctx.arc(Math.floor(this.x), Math.floor(this.y), 3, 0, Math.PI * 2);
+                    ctx.arc(Math.round(this.x), Math.round(this.y), 4, 0, Math.PI * 2); // 增大发射点尺寸
                     ctx.fillStyle = `rgb(${this.color[0]}, ${this.color[1]}, ${this.color[2]})`;
                     ctx.fill();
+                    ctx.closePath();
                 } else {
                     this.particles.forEach(particle => particle.draw());
                 }
             }
         }
 
-        // 主程序
         let fireworks = [];
         let animationId;
-        let fireworkSpawnRate = 0.01;
+        let fireworkSpawnRate = 0.012; // 提高生成频率，效果更密集
 
-        // 初始化
         function init() {
-            // 支持移动端触摸事件
             document.addEventListener('click', initAudio, { once: true });
             document.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // 阻止默认触摸行为
+                e.preventDefault();
                 initAudio();
             }, { once: true });
             animate();
         }
 
-        // 动画循环
         function animate() {
-            // 背景透明度调高，拖影更长，视觉上更舒缓
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+            // 降低背景透明度，减少拖影模糊
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
             ctx.fillRect(0, 0, canvas.width / (window.devicePixelRatio || 1), canvas.height / (window.devicePixelRatio || 1));
 
-            // 自动生成烟花（频率降低）
             if (Math.random() < fireworkSpawnRate && isAudioInited) {
                 fireworks.push(new Firework());
             }
 
-            // 更新和绘制所有烟花
             for (let i = fireworks.length - 1; i >= 0; i--) {
                 const firework = fireworks[i];
                 firework.update();
                 firework.draw();
-                
                 if (firework.exploded && firework.particles.length === 0) {
                     fireworks.splice(i, 1);
                 }
@@ -425,12 +385,10 @@
             animationId = requestAnimationFrame(animate);
         }
 
-        // 窗口关闭时停止动画
         window.addEventListener('beforeunload', () => {
             cancelAnimationFrame(animationId);
         });
 
-        // 启动程序
         init();
     </script>
 </body>
